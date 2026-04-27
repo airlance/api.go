@@ -30,10 +30,9 @@ func serve(cmd *cobra.Command) {
 	}
 	defer container.Close()
 
-	// Config is owned by the container — no second config.Init call here.
 	cfg := container.Config
 
-	r := router.New(cfg, container.DB, container.ProfileService)
+	r := router.New(cfg, container.DB, container.AccountService)
 
 	addr := fmt.Sprintf(":%s", cfg.Server.Port)
 	server := &http.Server{

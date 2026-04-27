@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/resoul/api/internal/config"
 	"github.com/resoul/api/internal/domain"
 	infradb "github.com/resoul/api/internal/infrastructure/db"
@@ -21,7 +23,8 @@ import (
 type Container struct {
 	Config         *config.Config
 	DB             *gorm.DB
-	ProfileService domain.ProfileService
+	AccountService domain.AccountService
+	StorageClient  *minio.Client
 }
 
 func NewContainer(ctx context.Context) (*Container, error) {
@@ -32,13 +35,22 @@ func NewContainer(ctx context.Context) (*Container, error) {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	profileRepo := infradb.NewProfileRepository(db)
-	profileSvc := service.NewProfileService(profileRepo)
+	storageClient, err := minio.New(cfg.Storage.Endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(cfg.Storage.AccessKey, cfg.Storage.SecretKey, ""),
+		Secure: cfg.Storage.UseSSL,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create storage client: %w", err)
+	}
+
+	accountRepo := infradb.NewAccountRepository(db)
+	accountSvc := service.NewAccountService(accountRepo, storageClient)
 
 	return &Container{
 		Config:         cfg,
 		DB:             db,
-		ProfileService: profileSvc,
+		AccountService: accountSvc,
+		StorageClient:  storageClient,
 	}, nil
 }
 

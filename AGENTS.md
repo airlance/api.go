@@ -21,14 +21,14 @@ external tools like Gin or GORM.
 │   │   └── container.go    # Composition root — holds all singletons and wires layers
 │   ├── domain/
 │   │   ├── errors.go       # Sentinel errors — single source of truth for domain failures
-│   │   └── profile.go      # Profile entity, ProfileRepository, ProfileService, input structs
+│   │   └── account.go      # Account entity, AccountRepository, AccountService, input structs
 │   ├── models/
 │   │   └── user.go         # GORM-mapped struct for auth.users (read-only mirror)
 │   ├── service/
-│   │   └── profile_service.go  # ProfileService implementation
+│   │   └── account_service.go  # AccountService implementation
 │   ├── infrastructure/
 │   │   └── db/
-│   │       ├── profile_repository.go   # GORM ProfileRepository implementation
+│   │       ├── account_repository.go   # GORM AccountRepository implementation
 │   │       └── migrations/
 │   │           └── migrations.go       # gormigrate migration list
 │   ├── middleware/
@@ -38,7 +38,7 @@ external tools like Gin or GORM.
 │   │       ├── router/
 │   │       │   └── router.go           # All route wiring — single source of truth
 │   │       ├── handlers/
-│   │       │   └── profile_handler.go  # GET /user/me, PATCH /user/profile
+│   │       │   └── account_handler.go  # GET /user/me, PATCH /user/account
 │   │       └── utils/
 │   │           ├── errors.go           # MapError + RespondMapped
 │   │           ├── respond.go          # RespondOK, RespondError, RespondCreated
@@ -75,6 +75,7 @@ Loaded once per process inside `di.NewContainer`. Populated via `kelseyhightower
 | `LoggingConfig` | `LOG_` | `Level` (default: `debug`) |
 | `ServerConfig` | `SERVER_` | `Port` (default: `8080`) |
 | `AuthConfig` | `AUTH_` | `URL` (required), `APIKey` (required), `JWTSecret` (required) |
+| `StorageConfig` | `STORAGE_` | `Endpoint` (required), `AccessKey` (required), `SecretKey` (required), `UseSSL` (default: `false`) |
 
 **Rules:**
 - `Init` panics on misconfiguration — fail fast at startup.
@@ -87,7 +88,7 @@ The "language" of the project. **No external dependencies allowed here** — onl
 | File | Contents |
 |---|---|
 | `errors.go` | Sentinel errors: `ErrNotFound`, `ErrConflict`, `ErrUnauthorized`, `ErrForbidden`, `ErrInvalidInput` |
-| `profile.go` | `Profile` entity, `UpdateProfileInput`, `ProfileRepository` interface, `ProfileService` interface |
+| `account.go` | `Account` entity, `UpdateAccountInput`, `AccountRepository` interface, `AccountService` interface |
 
 **Hard rules:**
 - No imports from `service/`, `infrastructure/`, or `transport/`.
@@ -102,7 +103,8 @@ The "language" of the project. **No external dependencies allowed here** — onl
 |---|---|---|
 | `Config` | `*config.Config` | `config.Init(ctx)` — called **once**, here |
 | `DB` | `*gorm.DB` | `openDB(cfg.DB.DSN)` |
-| `ProfileService` | `domain.ProfileService` | `service.NewProfileService(profileRepo)` |
+| `AccountService` | `domain.AccountService` | `service.NewAccountService(accountRepo, storageClient)` |
+| `StorageClient` | `*minio.Client` | `minio.New(cfg.Storage.Endpoint, &minio.Options{...})` |
 
 `Container.Close()` closes the underlying `*sql.DB`.
 
@@ -130,16 +132,16 @@ Business logic. Coordinates domain entities and repository interfaces.
 - Returns `domain.Err*` sentinel errors — never raw strings or HTTP codes.
 - Must NOT know about Gin, GORM internals, or any HTTP concerns.
 
-#### ProfileService (`profile_service.go`)
+#### AccountService (`account_service.go`)
 
 | Method | Behaviour |
 |---|---|
-| `GetOrCreate(ctx, userID)` | Returns existing profile or creates an empty one (idempotent). |
-| `Update(ctx, userID, inp)` | Returns `ErrInvalidInput` if all fields in `inp` are nil. Reads current profile, patches non-nil fields, calls `Upsert`. Returns `ErrNotFound` if no profile exists. |
+| `GetOrCreate(ctx, userID)` | Returns existing account or creates an empty one with a unique bucket (idempotent). |
+| `Update(ctx, userID, inp)` | Returns `ErrInvalidInput` if all fields in `inp` are nil. Reads current account, patches non-nil fields, calls `Upsert`. Returns `ErrNotFound` if no account exists. |
 
 ### G. Infrastructure Layer (`internal/infrastructure/`)
 
-#### ProfileRepository (`db/profile_repository.go`)
+#### AccountRepository (`db/account_repository.go`)
 
 GORM implementation of `domain.ProfileRepository`.
 
@@ -204,8 +206,8 @@ Current routes:
 | Method | Path | Auth | Handler |
 |---|---|---|---|
 | `GET` | `/api/v1/health` | — | inline |
-| `GET` | `/api/v1/user/me` | ✅ | `ProfileHandler.GetMe` |
-| `PATCH` | `/api/v1/user/profile` | ✅ | `ProfileHandler.UpdateProfile` |
+| `GET` | `/api/v1/user/me` | ✅ | `AccountHandler.GetMe` |
+| `PATCH` | `/api/v1/user/account` | ✅ | `AccountHandler.UpdateAccount` |
 
 Route groups:
 - `api` (`/api/v1`) — base group, no auth.
@@ -221,7 +223,7 @@ CORS is configured via `gin-contrib/cors` to allow `http://dashboard.studio.loca
 
 | File | Handler | Routes |
 |---|---|---|
-| `profile_handler.go` | `ProfileHandler` | `GET /user/me`, `PATCH /user/profile` |
+| `account_handler.go` | `AccountHandler` | `GET /user/me`, `PATCH /user/account` |
 
 **Handler contract:**
 1. Extract identity via `contextUser(c)` — set by `middleware.Auth`.
@@ -253,13 +255,13 @@ Use `utils.RespondMapped(c, err)` — **never duplicate this table** in handler 
 ```
 HTTP Request
   → middleware.Auth              (validates HS256 JWT, injects *middleware.AuthUser)
-  → ProfileHandler               (extracts user, binds JSON)
-  → ProfileService               (business rules, returns domain.Err* on failure)
-  → ProfileRepository            (GORM query, translates gorm errors → domain errors)
+  → AccountHandler               (extracts user, binds JSON)
+  → AccountService               (business rules, returns domain.Err* on failure)
+  → AccountRepository            (GORM query, translates gorm errors → domain errors)
   → PostgreSQL (schema: app)
 
 HTTP Response
-  ← ProfileResponse              (merged auth + profile fields)
+  ← AccountResponse              (merged auth + account fields)
   ← utils.RespondMapped          (domain error → HTTP status)
 ```
 
@@ -297,6 +299,18 @@ Claims extracted from the JWT: `sub` → `ID`, `email` → `Email`, `role` → `
 | `deps` | `go mod download && verify` |
 
 Version injected via: `-X github.com/resoul/api/internal/utilities.Version=$(VERSION)`
+
+---
+
+## 7. Supporting Services
+
+| Service | Container | Local port | URL |
+|---|---|---|---|
+| PostgreSQL 16 | `db` | `5432` | — |
+| GoTrue (Auth) | `auth` | `9999` | `http://auth.studio.localhost` |
+| Mailpit (SMTP/UI) | `mailpit` | `3016` (UI), `1025` (SMTP) | `http://mail.studio.localhost` |
+| Adminer (DB UI) | `adminer` | `3033` | `http://adminer.studio.localhost` |
+| MinIO (Storage) | `storage` | `9000` (API), `9001` (Console) | `http://storage.studio.localhost` |
 
 All binaries: `CGO_ENABLED=0`.
 

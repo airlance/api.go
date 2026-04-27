@@ -11,10 +11,10 @@ func All() []*gormigrate.Migration {
 		{
 			ID: "202404041700_initial_schema",
 			Migrate: func(tx *gorm.DB) error {
-				return tx.AutoMigrate(&domain.Profile{})
+				return tx.AutoMigrate(&domain.Account{})
 			},
 			Rollback: func(tx *gorm.DB) error {
-				return tx.Migrator().DropTable(&domain.Profile{})
+				return tx.Migrator().DropTable(&domain.Account{})
 			},
 		},
 	}

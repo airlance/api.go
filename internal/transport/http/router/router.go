@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func New(cfg *config.Config, db *gorm.DB, profileSvc domain.ProfileService) *gin.Engine {
+func New(cfg *config.Config, db *gorm.DB, accountSvc domain.AccountService) *gin.Engine {
 	r := gin.Default()
 
 	r.Use(cors.New(cors.Config{
@@ -23,7 +23,7 @@ func New(cfg *config.Config, db *gorm.DB, profileSvc domain.ProfileService) *gin
 		AllowHeaders: []string{"Authorization", "Content-Type"},
 	}))
 
-	profileHandler := handlers.NewProfileHandler(profileSvc)
+	accountHandler := handlers.NewAccountHandler(accountSvc)
 
 	api := r.Group("/api/v1")
 	{
@@ -35,8 +35,8 @@ func New(cfg *config.Config, db *gorm.DB, profileSvc domain.ProfileService) *gin
 		// Authenticated routes.
 		authed := api.Group("/", middleware.Auth(cfg.Auth.JWTSecret))
 		{
-			authed.GET("/user/me", profileHandler.GetMe)
-			authed.PATCH("/user/profile", profileHandler.UpdateProfile)
+			authed.GET("/user/me", accountHandler.GetMe)
+			authed.PATCH("/user/account", accountHandler.UpdateAccount)
 		}
 	}
 

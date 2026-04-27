@@ -14,6 +14,7 @@ type Config struct {
 	Logging LoggingConfig  `envconfig:"LOG"`
 	Server  ServerConfig   `envconfig:"SERVER"`
 	Auth    AuthConfig     `envconfig:"AUTH"`
+	Storage StorageConfig  `envconfig:"STORAGE"`
 }
 
 type DatabaseConfig struct {
@@ -32,6 +33,13 @@ type AuthConfig struct {
 	URL       string `envconfig:"URL" required:"true"`
 	APIKey    string `envconfig:"API_KEY" required:"true"`
 	JWTSecret string `envconfig:"JWT_SECRET" required:"true"`
+}
+
+type StorageConfig struct {
+	Endpoint  string `envconfig:"ENDPOINT" required:"true"`
+	AccessKey string `envconfig:"ACCESS_KEY" required:"true"`
+	SecretKey string `envconfig:"SECRET_KEY" required:"true"`
+	UseSSL    bool   `envconfig:"USE_SSL" default:"false"`
 }
 
 func Init(ctx context.Context) *Config {
